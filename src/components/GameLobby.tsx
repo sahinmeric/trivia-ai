@@ -7,12 +7,15 @@ import {
   doc,
   arrayUnion,
 } from "firebase/firestore";
+import { signOut } from "firebase/auth";
 import { Box, Button, TextField, Typography, Container } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 
 const GameLobby: React.FC = () => {
   const [roomCode, setRoomCode] = useState("");
   const [createdRoomCode, setCreatedRoomCode] = useState("");
   const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   // Create a new room
   const createRoom = async () => {
@@ -41,6 +44,16 @@ const GameLobby: React.FC = () => {
     } catch (error) {
       setError("Failed to join room. Please check the code and try again.");
       console.error("Error joining room:", error);
+    }
+  };
+
+  // Handle user logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate("/"); // Redirect to login page after logout
+    } catch (error) {
+      console.error("Error logging out:", error);
     }
   };
 
@@ -99,6 +112,16 @@ const GameLobby: React.FC = () => {
             {error}
           </Typography>
         )}
+
+        <Button
+          variant="outlined"
+          color="error"
+          fullWidth
+          onClick={handleLogout}
+          sx={{ mt: 2 }}
+        >
+          Logout
+        </Button>
       </Box>
     </Container>
   );
