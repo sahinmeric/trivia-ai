@@ -4,16 +4,14 @@ import { getFirestore } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAB_TNCWB1fwgaV0WjeW48GplkJng3wiuk",
-  authDomain: "trivia-ai-e4a17.firebaseapp.com",
-  projectId: "trivia-ai-e4a17",
-  storageBucket: "trivia-ai-e4a17.appspot.com",
-  messagingSenderId: "838262342607",
-  appId: "1:838262342607:web:b235164b2ccf156b2688ba",
-  measurementId: "G-NZJJ59L031",
+  apiKey: process.env.REACT_APP_API_KEY,
+  authDomain: process.env.REACT_APP_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_APP_ID,
+  measurementId: process.env.REACT_APP_MEASUREMENT_ID,
 };
-
-// Initialize Firebase
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
