@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 export const useTimer = (initialTime: number, onTimeOut: () => void) => {
   const [timer, setTimer] = useState(initialTime);
+  const timeoutTriggered = useRef(false);
 
   useEffect(() => {
     if (timer > 0) {
@@ -10,12 +11,16 @@ export const useTimer = (initialTime: number, onTimeOut: () => void) => {
       }, 1000);
       return () => clearInterval(countdown);
     } else {
-      onTimeOut();
+      if (!timeoutTriggered.current) {
+        timeoutTriggered.current = true;
+        onTimeOut();
+      }
     }
   }, [timer, onTimeOut]);
 
   const resetTimer = useCallback(() => {
     setTimer(initialTime);
+    timeoutTriggered.current = false;
   }, [initialTime]);
 
   return { timer, resetTimer };
