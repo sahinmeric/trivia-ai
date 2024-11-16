@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { auth } from "./firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./components/Login";
 import GameLobby from "./components/GameLobby";
+import Game from "./components/Game";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -22,6 +23,15 @@ const App: React.FC = () => {
         path="/lobby"
         element={user ? <GameLobby /> : <Navigate to="/" />}
       />
+      <Route
+        path="/lobby/:roomId"
+        element={user ? <GameLobby /> : <Navigate to="/" />}
+      />
+      <Route
+        path="/game/:roomId"
+        element={user ? <Game /> : <Navigate to="/" />}
+      />
+      <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
 };
