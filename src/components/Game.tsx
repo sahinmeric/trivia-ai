@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { db, auth } from "../firebase";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
@@ -26,9 +26,6 @@ const Game: React.FC = () => {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isAnswerLocked, setIsAnswerLocked] = useState(false);
   const [showAnswers, setShowAnswers] = useState(false);
-  const [answers, setAnswers] = useState<{ [key: string]: { answer: string } }>(
-    {}
-  );
   const [userId, setUserId] = useState<string | null>(null);
   const [gameState, setGameState] = useState<string>("waiting");
   const [players, setPlayers] = useState<Player[]>([]);
@@ -43,6 +40,35 @@ const Game: React.FC = () => {
 
     return () => unsubscribe();
   }, []);
+
+  // Handle the end of a question, wrapped in useCallback
+  const handleEndOfQuestion = useCallback(async () => {
+    setIsAnswerLocked(true);
+    setShowAnswers(true);
+
+    setTimeout(async () => {
+      if (questions.length > 0 && currentQuestionIndex < questions.length - 1) {
+        const newIndex = currentQuestionIndex + 1;
+
+        await updateDoc(doc(db, "rooms", roomId!), {
+          currentQuestion: newIndex,
+          timer: 10,
+        });
+
+        setCurrentQuestionIndex(newIndex);
+        setQuestion(questions[newIndex]);
+        setTimer(10);
+        setSelectedAnswer(null);
+        setIsAnswerLocked(false);
+        setShowAnswers(false);
+      } else {
+        await updateDoc(doc(db, "rooms", roomId!), {
+          state: "finished",
+        });
+        setGameState("finished");
+      }
+    }, 3000);
+  }, [currentQuestionIndex, questions, roomId]);
 
   // Fetch room and question data from Firestore
   useEffect(() => {
@@ -73,7 +99,6 @@ const Game: React.FC = () => {
         }
 
         setTimer(roomData.timer ?? 10);
-        setAnswers(roomData.answers || {});
       }
     });
 
@@ -90,37 +115,7 @@ const Game: React.FC = () => {
     } else if (timer === 0) {
       handleEndOfQuestion();
     }
-  }, [timer, isAnswerLocked]);
-
-  // Handle the end of a question
-  const handleEndOfQuestion = async () => {
-    setIsAnswerLocked(true);
-    setShowAnswers(true);
-
-    setTimeout(async () => {
-      if (questions.length > 0 && currentQuestionIndex < questions.length - 1) {
-        const newIndex = currentQuestionIndex + 1;
-
-        await updateDoc(doc(db, "rooms", roomId!), {
-          currentQuestion: newIndex,
-          timer: 10,
-          answers: {},
-        });
-
-        setCurrentQuestionIndex(newIndex);
-        setQuestion(questions[newIndex]);
-        setTimer(10);
-        setSelectedAnswer(null);
-        setIsAnswerLocked(false);
-        setShowAnswers(false);
-      } else {
-        await updateDoc(doc(db, "rooms", roomId!), {
-          state: "finished",
-        });
-        setGameState("finished");
-      }
-    }, 3000);
-  };
+  }, [timer, isAnswerLocked, handleEndOfQuestion]);
 
   // Handle player's answer and update score
   const handleAnswer = async (answer: string) => {
@@ -131,7 +126,6 @@ const Game: React.FC = () => {
     const isCorrect = answer === question?.correctAnswer;
     const score = isCorrect ? timer * 10 : 0;
 
-    // Update the player's score in Firestore
     const roomRef = doc(db, "rooms", roomId);
     const updatedPlayers = players.map((player) =>
       player.uid === userId
@@ -167,7 +161,7 @@ const Game: React.FC = () => {
         <Box>
           <Typography variant="h4">{question.question}</Typography>
           <Box sx={{ mt: 4 }}>
-            {question.options.map((option: string, index: number) => (
+            {question.options.map((option: string, index) => (
               <Button
                 key={index}
                 variant="contained"
