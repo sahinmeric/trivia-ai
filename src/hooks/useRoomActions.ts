@@ -6,9 +6,10 @@ import {
   addDoc,
   updateDoc,
   doc,
-  arrayUnion,
   getDoc,
+  arrayUnion,
 } from "firebase/firestore";
+import { mockQuestions } from "../MockQuestions";
 
 const useRoomActions = () => {
   const [error, setError] = useState<string | null>(null);
@@ -17,43 +18,88 @@ const useRoomActions = () => {
   const createRoom = async () => {
     setError(null);
     try {
+      if (!auth.currentUser) {
+        setError("User not authenticated.");
+        return;
+      }
+
       const roomRef = await addDoc(collection(db, "rooms"), {
-        host: auth.currentUser?.uid,
+        host: auth.currentUser.uid,
         players: [
-          { uid: auth.currentUser?.uid, name: auth.currentUser?.email },
+          {
+            uid: auth.currentUser.uid,
+            name: auth.currentUser.email,
+            score: 0,
+          },
         ],
         state: "waiting",
+        currentQuestion: 0,
+        questions: mockQuestions,
+        answers: {},
+        timer: 10,
       });
+
       navigate(`/lobby/${roomRef.id}`);
     } catch (err) {
-      console.error("Failed to create room:", err);
+      console.error("Error creating room:", err);
       setError("Failed to create room. Please try again.");
     }
   };
-
   const joinRoom = async (code: string) => {
     setError(null);
     try {
+      if (!auth.currentUser) {
+        setError("User not authenticated.");
+        return;
+      }
+
       const roomRef = doc(db, "rooms", code);
       const roomSnap = await getDoc(roomRef);
+
       if (roomSnap.exists()) {
+        const player = {
+          uid: auth.currentUser.uid,
+          name: auth.currentUser.email,
+          score: 0,
+        };
+
         await updateDoc(roomRef, {
-          players: arrayUnion({
-            uid: auth.currentUser?.uid,
-            name: auth.currentUser?.email,
-          }),
+          players: arrayUnion(player),
         });
+
         navigate(`/lobby/${code}`);
       } else {
-        setError("Room not found. Please check the code.");
+        setError("Room not found.");
       }
     } catch (err) {
       console.error("Error joining room:", err);
-      setError("Error joining room. Please try again.");
+      setError("Failed to join room. Please try again.");
     }
   };
 
-  return { createRoom, joinRoom, error };
+  const startGame = async (roomId: string) => {
+    setError(null);
+    try {
+      if (!roomId) {
+        setError("Invalid room ID.");
+        return;
+      }
+
+      const roomRef = doc(db, "rooms", roomId);
+      await updateDoc(roomRef, {
+        state: "in-progress",
+        currentQuestion: 0,
+        timer: 10,
+      });
+
+      console.log(`Game started for room: ${roomId}`);
+    } catch (err) {
+      console.error("Failed to start game:", err);
+      setError("Failed to start game. Please try again.");
+    }
+  };
+
+  return { createRoom, joinRoom, startGame, error };
 };
 
 export default useRoomActions;
