@@ -1,130 +1,71 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { db, auth } from "../firebase";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
+import { db } from "../firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { Container, Typography, Button, Box } from "@mui/material";
-
-interface Question {
-  question: string;
-  options: string[];
-  correctAnswer: string;
-}
-
-interface Player {
-  uid: string;
-  name: string;
-  score: number;
-}
+import useAuthListener from "../hooks/useAuthListener";
+import { useRoomData } from "../hooks/useRoomData";
+import { useTimer } from "../hooks/useTimer";
 
 const Game: React.FC = () => {
   const { roomId } = useParams();
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [question, setQuestion] = useState<Question | null>(null);
-  const [timer, setTimer] = useState(10);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [isAnswerLocked, setIsAnswerLocked] = useState(false);
-  const [showAnswers, setShowAnswers] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<string>("waiting");
-  const [players, setPlayers] = useState<Player[]>([]);
+  const user = useAuthListener();
+  const userId = user?.uid;
+  const { questions, currentQuestionIndex, question, players, gameState } =
+    useRoomData(roomId);
 
-  // Fetch the authenticated user's UID using onAuthStateChanged
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-      }
-    });
+  const { timer: countdown, resetTimer } = useTimer(10, () =>
+    handleEndOfQuestion()
+  );
 
-    return () => unsubscribe();
-  }, []);
-
-  // Handle the end of a question, wrapped in useCallback
   const handleEndOfQuestion = useCallback(async () => {
-    setIsAnswerLocked(true);
-    setShowAnswers(true);
-
-    setTimeout(async () => {
-      if (questions.length > 0 && currentQuestionIndex < questions.length - 1) {
-        const newIndex = currentQuestionIndex + 1;
-
-        await updateDoc(doc(db, "rooms", roomId!), {
-          currentQuestion: newIndex,
-          timer: 10,
-        });
-
-        setCurrentQuestionIndex(newIndex);
-        setQuestion(questions[newIndex]);
-        setTimer(10);
-        setSelectedAnswer(null);
-        setIsAnswerLocked(false);
-        setShowAnswers(false);
-      } else {
-        await updateDoc(doc(db, "rooms", roomId!), {
-          state: "finished",
-        });
-        setGameState("finished");
-      }
-    }, 3000);
-  }, [currentQuestionIndex, questions, roomId]);
-
-  // Fetch room and question data from Firestore
-  useEffect(() => {
     if (!roomId) return;
 
-    const roomRef = doc(db, "rooms", roomId);
-    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const roomData = docSnap.data();
-        setGameState(roomData.state);
-        setPlayers(roomData.players || []);
+    try {
+      const roomRef = doc(db, "rooms", roomId);
+      const roomSnap = await getDoc(roomRef);
 
-        if (roomData.state === "finished") {
-          setQuestion(null);
-          return;
-        }
-
-        if (Array.isArray(roomData.questions)) {
-          setQuestions(roomData.questions);
-          setCurrentQuestionIndex(roomData.currentQuestion ?? 0);
-
-          const questionIndex = roomData.currentQuestion ?? 0;
-          if (roomData.questions[questionIndex]) {
-            setQuestion(roomData.questions[questionIndex]);
-          } else {
-            setQuestion(null);
-          }
-        }
-
-        setTimer(roomData.timer ?? 10);
+      if (!roomSnap.exists()) {
+        console.error("Room does not exist");
+        return;
       }
-    });
 
-    return () => unsubscribe();
-  }, [roomId]);
+      const roomData = roomSnap.data();
 
-  // Countdown Timer Effect
-  useEffect(() => {
-    if (timer > 0 && !isAnswerLocked) {
-      const countdown = setInterval(() => {
-        setTimer((prev) => prev - 1);
-      }, 1000);
-      return () => clearInterval(countdown);
-    } else if (timer === 0) {
-      handleEndOfQuestion();
+      if (!roomData) {
+        console.error("Room data is undefined");
+        return;
+      }
+
+      if (roomData.state !== "in-progress") {
+        console.log("Game is not in progress, exiting");
+        return;
+      }
+
+      if (questions.length > 0 && currentQuestionIndex < questions.length - 1) {
+        const newIndex = currentQuestionIndex + 1;
+        await updateDoc(roomRef, {
+          currentQuestion: newIndex,
+          timer: 10,
+          answers: {},
+        });
+
+        resetTimer();
+      } else {
+        await updateDoc(roomRef, {
+          state: "finished",
+        });
+      }
+    } catch (error) {
+      console.error("Error in handleEndOfQuestion:", error);
     }
-  }, [timer, isAnswerLocked, handleEndOfQuestion]);
+  }, [currentQuestionIndex, questions, roomId, resetTimer]);
 
-  // Handle player's answer and update score
   const handleAnswer = async (answer: string) => {
-    if (!roomId || selectedAnswer || isAnswerLocked || !userId) return;
-
-    setSelectedAnswer(answer);
+    if (!roomId || !userId) return;
 
     const isCorrect = answer === question?.correctAnswer;
-    const score = isCorrect ? timer * 10 : 0;
+    const score = isCorrect ? countdown * 10 : 0;
 
     const roomRef = doc(db, "rooms", roomId);
     const updatedPlayers = players.map((player) =>
@@ -134,7 +75,7 @@ const Game: React.FC = () => {
     );
 
     await updateDoc(roomRef, {
-      [`answers.${userId}`]: { answer, timestamp: timer },
+      [`answers.${userId}`]: { answer, timestamp: countdown },
       players: updatedPlayers,
     });
   };
@@ -144,45 +85,33 @@ const Game: React.FC = () => {
       <Container maxWidth="md">
         <Typography variant="h4">Game Over</Typography>
         <Typography variant="h6">Final Scores:</Typography>
-        <Box sx={{ mt: 4 }}>
-          {players.map((player, index) => (
-            <Typography key={index}>
-              {player.name}: {player.score} points
-            </Typography>
-          ))}
-        </Box>
+        {players.map((player, index) => (
+          <Typography key={index}>
+            {player.name}: {player.score} points
+          </Typography>
+        ))}
       </Container>
     );
   }
 
   return (
     <Container maxWidth="md">
-      {question ? (
+      {question && (
         <Box>
           <Typography variant="h4">{question.question}</Typography>
-          <Box sx={{ mt: 4 }}>
-            {question.options.map((option: string, index) => (
-              <Button
-                key={index}
-                variant="contained"
-                onClick={() => handleAnswer(option)}
-                disabled={selectedAnswer !== null || isAnswerLocked}
-                sx={{ m: 2 }}
-                color={
-                  showAnswers && option === question.correctAnswer
-                    ? "success"
-                    : "primary"
-                }
-              >
-                {option}
-              </Button>
-            ))}
-          </Box>
+          {question.options.map((option, index) => (
+            <Button
+              key={index}
+              onClick={() => handleAnswer(option)}
+              disabled={countdown === 0}
+              sx={{ m: 2 }}
+            >
+              {option}
+            </Button>
+          ))}
+          <Typography variant="h6">Time left: {countdown} seconds</Typography>
         </Box>
-      ) : (
-        <Typography variant="h6">Loading question...</Typography>
       )}
-      <Typography variant="h6">Time left: {timer} seconds</Typography>
     </Container>
   );
 };
