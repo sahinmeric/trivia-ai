@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Container, Box } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import LobbyControls from "./LobbyControls";
 import PlayerList from "./PlayerList";
 import StartGameButton from "./StartGameButton";
@@ -9,12 +9,31 @@ import RoomCode from "./RoomCode";
 import usePlayers from "../hooks/usePlayers";
 import useRoomOwner from "../hooks/useRoomOwner";
 import useRoomActions from "../hooks/useRoomActions";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
 
 const GameLobby: React.FC = () => {
   const { roomId } = useParams();
+  const navigate = useNavigate();
   const { players, ownerId } = usePlayers(roomId);
   const isOwner = useRoomOwner(roomId);
-  const { createRoom, joinRoom, error } = useRoomActions();
+  const { createRoom, joinRoom, startGame, error } = useRoomActions();
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const roomRef = doc(db, "rooms", roomId);
+    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const roomData = docSnap.data();
+        if (roomData.state === "in-progress") {
+          navigate(`/game/${roomId}`);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId, navigate]);
 
   return (
     <Container maxWidth="xs">
@@ -29,11 +48,14 @@ const GameLobby: React.FC = () => {
           <>
             {roomId && <RoomCode roomId={roomId} />}
             <PlayerList players={players} ownerId={ownerId} />
-            <StartGameButton
-              isOwner={isOwner}
-              playerCount={players.length}
-              onStart={() => {}}
-            />
+            {isOwner && (
+              <StartGameButton
+                isOwner={isOwner}
+                roomId={roomId}
+                playerCount={players.length}
+                onStart={startGame}
+              />
+            )}
           </>
         )}
         <LogoutButton />
